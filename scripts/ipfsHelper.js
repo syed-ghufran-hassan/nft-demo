@@ -5,22 +5,28 @@ const config = require('config');
 // https://stackoverflow.com/questions/36856232/write-add-data-in-json-file-using-node-js
 // Accepts json data and stores in specified filePath.
 // If the file does not exists in specified location, it creates it
+const lockfile = require('proper-lockfile');
+
 const storeDataToFile = async (jsonData) => {
+  const filePath = path.join(__dirname, config.get('ipfsFile.location'));
+  let release;
+
   try {
-    const filePath = path.join(__dirname, config.get('ipfsFile.location'));
-    const ipfsFileExists = await fileExists(filePath);
-    if (!ipfsFileExists) {
-      console.log('ipfsFileExists: ', ipfsFileExists);
-      // First time creating an empty file with [].
-      // We will be storing all ipfsHashes as array of objects
-      await fs.writeFile(filePath, JSON.stringify([]));
+    // Acquire lock (wait if another process is writing)
+    release = await lockfile.lock(filePath, { retries: 3 });
+    
+    let json = [];
+    try {
+      const data = await fs.readFile(filePath, 'utf8');
+      json = JSON.parse(data);
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
     }
-    const data = await fs.readFile(filePath, 'utf8');
-    const json = JSON.parse(data);
+
     json.push(jsonData);
     await fs.writeFile(filePath, JSON.stringify(json));
-  } catch (err) {
-    console.log('Error occured while storing data to file', err);
+  } finally {
+    if (release) await release(); // Release lock
   }
 };
 
